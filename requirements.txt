@@ -3,3 +3,5 @@ torchvision
 opencv-python
 scikit-image
 scipy
+transformers
+numpy
