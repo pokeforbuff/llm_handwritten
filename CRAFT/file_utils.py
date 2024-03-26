@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import os
 import numpy as np
 import cv2
@@ -74,3 +75,13 @@ def saveResult(img_file, img, boxes, dirname='./result/', verticals=None, texts=
         # Save result image
         cv2.imwrite(res_img_file, img)
 
+
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)

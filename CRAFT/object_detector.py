@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import argparse
+import json
 
 import torch
 import torch.nn as nn
@@ -26,6 +27,7 @@ import json
 import zipfile
 
 from CRAFT.craft import CRAFT
+from CRAFT.file_utils import NpEncoder
 
 from collections import OrderedDict
 
@@ -181,12 +183,7 @@ def generate_bbox(
     return bboxes
 
 
-def format_bbox_by_line(input_image_path, bboxes):
-    result_folder = 'CRAFT/result'
-    if not os.path.isdir(result_folder):
-        os.mkdir(result_folder)
-
-    img = cv2.imread(input_image_path)
+def format_bbox_by_line(bboxes):
     num_bboxes = bboxes.shape[0]
     words = []
     for i in range(num_bboxes):
@@ -251,6 +248,14 @@ def format_bbox_by_line(input_image_path, bboxes):
         del lines[line_number]['max_y']
         words.append(lines[line_number]['words'])
     lines = list(lines.values())
+    return lines
+
+
+def generate_image_with_bboxes(input_image_path, lines):
+    img = cv2.imread(input_image_path)
+    result_folder = 'CRAFT/result'
+    if not os.path.isdir(result_folder):
+        os.mkdir(result_folder)
     for line in lines:
         for word in line['words']:
             poly = np.array(word['bbox']).astype(np.int32).reshape((-1))
@@ -260,4 +265,6 @@ def format_bbox_by_line(input_image_path, bboxes):
     filename, file_ext = os.path.splitext(os.path.basename(input_image_path))
     result_file = result_folder + "/formatted_res_" + filename + '.jpg'
     cv2.imwrite(result_file, img)
-    return lines
+    result_json = result_folder + "/formatted_res_" + filename + ".json"
+    with open(result_json, "w") as outfile:
+        json.dump(lines, outfile, cls=NpEncoder)
