@@ -1,4 +1,9 @@
 LINE_HEIGHT = 125
-MIDDLE_CHARACTERS = ['a', 'c', 'e', 'i', 'm', 'n', 'o', 'r', 's', 'u', 'v', 'w', 'x', 'z'] # n=14
-UPPER_CHARACTERS = ['b', 'd', 'f', 'h', 'k', 'l', 't'] # n=7
-LOWER_CHARACTERS = ['g', 'j', 'p', 'q', 'y'] # n=5
+GENERATION_IMAGE_SIZE = 256
+INTER_SENTENCE_PADDING = 20
+INTRA_SENTENCE_PADDING = 20
+LEFT_SENTENCE_PADDING = 20
+MIDDLE_CHARACTERS = ['a', 'c', 'e', 'i', 'm', 'n', 'o', 'r', 's', 'u', 'v', 'w', 'x', 'z']
+UPPER_CHARACTERS = ['b', 'd', 'f', 'h', 'k', 'l', 't']
+LOWER_CHARACTERS = ['g', 'j', 'p', 'q', 'y']
+THEME = 'DARK'

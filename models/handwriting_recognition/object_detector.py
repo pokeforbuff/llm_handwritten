@@ -4,30 +4,22 @@ MIT License
 """
 
 # -*- coding: utf-8 -*-
-import sys
 import os
 import time
 import argparse
-import json
 
 import torch
-import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torch.autograd import Variable
 
-from PIL import Image
-
 import cv2
-from skimage import io
 import numpy as np
-from CRAFT import craft_utils
-from CRAFT import imgproc
-from CRAFT import file_utils
-import json
-import zipfile
+from models.handwriting_recognition import imgproc, file_utils, craft_utils
+from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+from PIL import Image, ImageOps
+import constants
 
-from CRAFT.craft import CRAFT
-from CRAFT.file_utils import NpEncoder
+from models.handwriting_recognition.craft import CRAFT
 
 from collections import OrderedDict
 
@@ -48,7 +40,7 @@ def str2bool(v):
     return v.lower() in ("yes", "y", "true", "t", "1")
 
 
-parser = argparse.ArgumentParser(description='CRAFT Text Detection')
+parser = argparse.ArgumentParser(description='handwriting_recognition Text Detection')
 parser.add_argument('--trained_model', default='weights/craft_mlt_25k.pth', type=str, help='pretrained model')
 parser.add_argument('--text_threshold', default=0.7, type=float, help='text confidence threshold')
 parser.add_argument('--low_text', default=0.4, type=float, help='text low-bound score')
@@ -123,7 +115,8 @@ def test_net(net, image, canvas_size, text_threshold, link_threshold, low_text, 
 
 def generate_bbox(
         input_image_path=None,
-        trained_model='CRAFT/weights/craft_mlt_25k.pth',
+        result_folder='result/',
+        trained_model='models/handwriting_recognition/weights/craft_mlt_25k.pth',
         text_threshold=0.7,
         low_text=0.4,
         link_threshold=0.4,
@@ -132,11 +125,10 @@ def generate_bbox(
         mag_ratio=1.5,
         poly=False,
         show_time=False,
-        test_folder='CRAFT/inputs/',
         refine=False,
-        refiner_model='CRAFT/weights/craft_refiner_CTW1500.pth'
+        refiner_model='models/handwriting_recognition/weights/craft_refiner_CTW1500.pth'
 ):
-    result_folder = 'CRAFT/result/'
+
     if not os.path.isdir(result_folder):
         os.mkdir(result_folder)
     net = CRAFT()  # initialize
@@ -167,7 +159,6 @@ def generate_bbox(
 
         refine_net.eval()
         poly = True
-    # load data
     image = imgproc.loadImage(input_image_path)
 
     bboxes, polys, score_text = test_net(net, image, canvas_size, text_threshold, link_threshold, low_text, cuda,
@@ -180,10 +171,11 @@ def generate_bbox(
     cv2.imwrite(mask_file, score_text)
 
     file_utils.saveResult(input_image_path, image[:, :, ::-1], polys, dirname=result_folder)
-    return bboxes
 
-
-def format_bbox_by_line(bboxes):
+    processor = TrOCRProcessor.from_pretrained("microsoft/trocr-base-handwritten")
+    model = VisionEncoderDecoderModel.from_pretrained("microsoft/trocr-base-handwritten")
+    input_image = Image.open(input_image_path).convert("RGB")
+    img = cv2.imread(input_image_path)
     num_bboxes = bboxes.shape[0]
     words = []
     for i in range(num_bboxes):
@@ -208,6 +200,7 @@ def format_bbox_by_line(bboxes):
             'words': []
         }
     }
+    recognized_text = ''
     for i, word in enumerate(words):
         line_assignment = 0
         for line_number in range(1, len(lines) + 1):
@@ -218,6 +211,7 @@ def format_bbox_by_line(bboxes):
         if line_assignment not in lines:
             lines[line_assignment] = {
                 'line_number': line_assignment,
+                'recognized_text': '',
                 'min_y': 0,
                 'max_y': 0,
                 'words': []
@@ -244,27 +238,61 @@ def format_bbox_by_line(bboxes):
                 [word['max_x'], word['max_y']],
                 [word['min_x'], word['max_y']]
             ])
+            min_bbox_dims = np.min(lines[line_number]['words'][i]['bbox'], axis=0)
+            max_bbox_dims = np.max(lines[line_number]['words'][i]['bbox'], axis=0)
+            object_image = input_image.crop((min_bbox_dims[0], min_bbox_dims[1], max_bbox_dims[0], max_bbox_dims[1]))
+            right = 20
+            left = 20
+            top = 20
+            bottom = 20
+            width, height = object_image.size
+            new_width = width + right + left
+            new_height = height + top + bottom
+            result = Image.new(object_image.mode, (new_width, new_height), "white" if constants.THEME == 'light' else "black")
+            result.paste(object_image, (left, top))
+            if constants.THEME == 'dark':
+                result = ImageOps.invert(result)
+            pixel_values = processor(result, return_tensors="pt").pixel_values
+            generated_ids = model.generate(pixel_values)
+            generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)
+            recognized_text = generated_text[0]
+            lines[line_number]['words'][i]['recognized_text'] = recognized_text
+            lines[line_number]['recognized_text'] += f'{recognized_text} '
+            recognized_text += f'{recognized_text} '
+            if height < constants.LINE_HEIGHT:
+                padding_needed = constants.LINE_HEIGHT - height
+                recognized_text_chars = set(recognized_text)
+                padding_direction = 0  # -1=UP, 0=UP_AND_DOWN, 1=DOWN
+                if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) > 0:
+                    if len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) == 0:
+                        padding_direction = 1
+                elif len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) > 0:
+                    if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) == 0:
+                        padding_direction = -1
+                top_padding = 0
+                bottom_padding = 0
+                if padding_direction == 0:
+                    top_padding = padding_needed // 2
+                    bottom_padding = padding_needed // 2
+                if padding_direction == -1:
+                    top_padding = padding_needed
+                if padding_direction == 1:
+                    bottom_padding = padding_needed
+                lines[line_number]['words'][i]['bbox'][0, 1] -= top_padding
+                lines[line_number]['words'][i]['bbox'][1, 1] -= top_padding
+                lines[line_number]['words'][i]['bbox'][2, 1] += bottom_padding
+                lines[line_number]['words'][i]['bbox'][3, 1] += bottom_padding
+
+                poly = np.array(lines[line_number]['words'][i]['bbox']).astype(np.int32).reshape((-1))
+                poly = poly.reshape(-1, 2)
+                cv2.polylines(img, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
         del lines[line_number]['min_y']
         del lines[line_number]['max_y']
+        if lines[line_number]['recognized_text'] != '':
+            lines[line_number]['recognized_text'] = lines[line_number]['recognized_text'][:-1]
         words.append(lines[line_number]['words'])
-    lines = list(lines.values())
-    return lines
-
-
-def generate_image_with_bboxes(input_image_path, lines):
-    img = cv2.imread(input_image_path)
-    result_folder = 'CRAFT/result'
-    if not os.path.isdir(result_folder):
-        os.mkdir(result_folder)
-    for line in lines:
-        for word in line['words']:
-            poly = np.array(word['bbox']).astype(np.int32).reshape((-1))
-            poly = poly.reshape(-1, 2)
-            cv2.polylines(img, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
-
-    filename, file_ext = os.path.splitext(os.path.basename(input_image_path))
+    bboxes = list(lines.values())
     result_file = result_folder + "/formatted_res_" + filename + '.jpg'
     cv2.imwrite(result_file, img)
-    result_json = result_folder + "/formatted_res_" + filename + ".json"
-    with open(result_json, "w") as outfile:
-        json.dump(lines, outfile, cls=NpEncoder)
+
+    return bboxes, recognized_text
