@@ -19,8 +19,8 @@ class WordSet(Dataset):
         labels = []
 
         if dataset == 'IAM':
-            images_path = 'dataset/words'
-            labels_path = 'dataset/xml'
+            images_path = 'models/handwriting_generation/dataset/words'
+            labels_path = 'models/handwriting_generation/dataset/xml'
             for directory in os.listdir(images_path):
                 folder_path = os.path.join(images_path, directory)
                 for subdirectory in os.listdir(folder_path):
@@ -39,13 +39,16 @@ class WordSet(Dataset):
                             labels.append(word_label)
 
         if dataset == 'IIIT-HWS':
-            ground_truths_file = open('dataset/iiit-hws/IIIT-HWS-90K.txt', 'r')
+            ground_truths_file = open('models/handwriting_generation/dataset/iiit-hws/IIIT-HWS-90K.txt', 'r')
             ground_truth_lines = ground_truths_file.readlines()
             for i, line in enumerate(ground_truth_lines):
                 line_split_parts = line.split()
                 image_path = line_split_parts[0]
                 image_label = line_split_parts[1]
-                image_path = os.path.join('dataset/iiit-hws/Images_90K_Normalized', image_path)
+                image_path = os.path.join(
+                    'models/handwriting_generation/dataset/iiit-hws/Images_90K_Normalized',
+                    image_path
+                )
                 data.append(image_path)
                 labels.append(image_label)
             ground_truths_file.close()
