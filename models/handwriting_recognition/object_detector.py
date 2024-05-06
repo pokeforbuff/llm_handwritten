@@ -200,7 +200,7 @@ def generate_bbox(
             'words': []
         }
     }
-    recognized_text = ''
+    recognized_final_text = ''
     for i, word in enumerate(words):
         line_assignment = 0
         for line_number in range(1, len(lines) + 1):
@@ -227,6 +227,8 @@ def generate_bbox(
             lines[line_assignment]['max_y'] = word['max_y']
     del lines[0]
     for line_number in range(1, len(lines) + 1):
+        top_padding = 0
+        bottom_padding = 0
         lines[line_number]['words'] = sorted(lines[line_number]['words'], key=lambda x: x['min_x'])
         for i, word in enumerate(lines[line_number]['words']):
             lines[line_number]['words'][i]['word_number'] = i + 1
@@ -256,43 +258,35 @@ def generate_bbox(
             generated_ids = model.generate(pixel_values)
             generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)
             recognized_text = generated_text[0]
+            if recognized_text.endswith('.'):
+                recognized_text = recognized_text[:-1]
             lines[line_number]['words'][i]['recognized_text'] = recognized_text
             lines[line_number]['recognized_text'] += f'{recognized_text} '
-            recognized_text += f'{recognized_text} '
-            if height < constants.LINE_HEIGHT:
-                padding_needed = constants.LINE_HEIGHT - height
-                recognized_text_chars = set(recognized_text)
-                padding_direction = 0  # -1=UP, 0=UP_AND_DOWN, 1=DOWN
-                if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) > 0:
-                    if len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) == 0:
-                        padding_direction = 1
-                elif len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) > 0:
-                    if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) == 0:
-                        padding_direction = -1
-                top_padding = 0
-                bottom_padding = 0
-                if padding_direction == 0:
-                    top_padding = padding_needed // 2
-                    bottom_padding = padding_needed // 2
-                if padding_direction == -1:
-                    top_padding = padding_needed
-                if padding_direction == 1:
-                    bottom_padding = padding_needed
-                lines[line_number]['words'][i]['bbox'][0, 1] -= top_padding
-                lines[line_number]['words'][i]['bbox'][1, 1] -= top_padding
-                lines[line_number]['words'][i]['bbox'][2, 1] += bottom_padding
-                lines[line_number]['words'][i]['bbox'][3, 1] += bottom_padding
-
-                poly = np.array(lines[line_number]['words'][i]['bbox']).astype(np.int32).reshape((-1))
-                poly = poly.reshape(-1, 2)
-                cv2.polylines(img, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
-        del lines[line_number]['min_y']
-        del lines[line_number]['max_y']
+            recognized_final_text += f'{recognized_text} '
+        recognized_text_chars = set(lines[line_number]['recognized_text'])
+        if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) > 0:
+            if len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) == 0:
+                lines[line_number]['max_y'] += (lines[line_number]['max_y'] - lines[line_number]['min_y']) // 4
+        elif len(recognized_text_chars.intersection(set(constants.LOWER_CHARACTERS))) > 0:
+            if len(recognized_text_chars.intersection(set(constants.UPPER_CHARACTERS))) == 0:
+                lines[line_number]['min_y'] -= (lines[line_number]['max_y'] - lines[line_number]['min_y']) // 4
         if lines[line_number]['recognized_text'] != '':
             lines[line_number]['recognized_text'] = lines[line_number]['recognized_text'][:-1]
         words.append(lines[line_number]['words'])
+        for i, word in enumerate(lines[line_number]['words']):
+            lines[line_number]['words'][i]['min_y'] = lines[line_number]['min_y']
+            lines[line_number]['words'][i]['max_y'] = lines[line_number]['max_y']
+            lines[line_number]['words'][i]['bbox'] = np.array([
+                [word['min_x'], word['min_y']],
+                [word['max_x'], word['min_y']],
+                [word['max_x'], word['max_y']],
+                [word['min_x'], word['max_y']]
+            ])
+            poly = np.array(lines[line_number]['words'][i]['bbox']).astype(np.int32).reshape((-1))
+            poly = poly.reshape(-1, 2)
+            cv2.polylines(img, [poly.reshape((-1, 1, 2))], True, color=(0, 0, 255), thickness=2)
     bboxes = list(lines.values())
     result_file = result_folder + "/formatted_res_" + filename + '.jpg'
     cv2.imwrite(result_file, img)
 
-    return bboxes, recognized_text
+    return bboxes, recognized_final_text

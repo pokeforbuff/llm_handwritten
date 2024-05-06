@@ -6,4 +6,4 @@ LEFT_SENTENCE_PADDING = 20
 MIDDLE_CHARACTERS = ['a', 'c', 'e', 'i', 'm', 'n', 'o', 'r', 's', 'u', 'v', 'w', 'x', 'z']
 UPPER_CHARACTERS = ['b', 'd', 'f', 'h', 'k', 'l', 't']
 LOWER_CHARACTERS = ['g', 'j', 'p', 'q', 'y']
-THEME = 'DARK'
+THEME = 'dark'

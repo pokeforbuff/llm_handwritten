@@ -1,1 +1,1 @@
-from object_detector import generate_bbox as run
+from models.handwriting_recognition.object_detector import generate_bbox as run

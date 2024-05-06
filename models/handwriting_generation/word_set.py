@@ -89,7 +89,7 @@ class WordSet(Dataset):
         image = torch.div(transform(new_image), 255)
         return (image, self.vocab['word_to_idx'][self.labels[index]])
 
-    def get_image(self, word_label, image_size='in-line', line_height=125):
+    def get_image(self, word_label, image_size='in-line', line_height=constants.LINE_HEIGHT):
         indices = np.where(self.labels == word_label)[0]
         index = np.random.choice(indices)
         try:
@@ -97,8 +97,10 @@ class WordSet(Dataset):
         except UnidentifiedImageError:
             index = np.random.choice(indices)
             image = Image.open(self.data[index])
-        image = self.increase_contrast(image)
         image = self.crop_image(image)
+        if constants.THEME == 'dark':
+            image = ImageOps.invert(image)
+        image = self.remove_background(image)
         if image_size == 'in-line':
             image_width, image_height = image.size
             if image_height >= line_height:
@@ -108,12 +110,10 @@ class WordSet(Dataset):
                 image = image.resize((new_image_width, new_image_height))
             image_width, image_height = image.size
             new_image_size = (image_width, line_height)
-            new_image = Image.new("L", new_image_size, "white")
+            new_image = Image.new("RGBA", new_image_size, (0, 0, 0, 0))
             box = tuple((n - o) // 2 for n, o in zip(new_image_size, image.size))
             new_image.paste(image, box)
             image = new_image
-            if constants.THEME == 'dark':
-                image = ImageOps.invert(image)
         return image
 
     def get_vocab(self):
@@ -128,23 +128,24 @@ class WordSet(Dataset):
         }
         return vocab
 
-    def increase_contrast(self, image):
-        data = np.expand_dims(np.array(image), axis=2)
-        rgb = data[:, :, :1]
-        color = [160]
-        black = [0]
-        white = [255]
-        mask = np.all(rgb > color, axis=-1)
-        data[mask] = white
-        data[np.logical_not(mask)] = black
-        object_image = Image.fromarray(data[:, :, 0], 'L')
+    def remove_background(self, image):
+        data = np.array(image.convert('RGBA'))
+        rgb = data[:,:,:3]
+        color = [140, 140, 140]  
+        black = [0, 0, 0, 255]
+        white = [255, 255, 255, 255]
+        transparent = [0, 0, 0, 0]
+        mask = np.all(rgb > color, axis = -1)
+        data[mask] = white if constants.THEME == 'dark' else transparent
+        data[np.logical_not(mask)] = transparent if constants.THEME == 'dark' else black
+        object_image = Image.fromarray(data)
         return object_image
-
+    
     def crop_image(self, image):
         data = np.array(image)
         color = 160
-        rows_to_keep = np.any(data <= color, axis=1)
-        cols_to_keep = np.any(data <= color, axis=0)
+        rows_to_keep = np.any(data <= color, axis = 1)
+        cols_to_keep = np.any(data <= color, axis = 0)
         data = data[rows_to_keep][:, cols_to_keep]
-        object_image = Image.fromarray(data, 'L')
+        object_image = Image.fromarray(data)
         return object_image

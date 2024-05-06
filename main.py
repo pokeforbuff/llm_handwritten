@@ -3,5 +3,5 @@ from models import handwriting_recognition, text_autocompletion, handwriting_gen
 if __name__ == '__main__':
     input_image_path = 'inputs/note.png'
     detected_objects, recognized_text = handwriting_recognition.run(input_image_path=input_image_path, cuda=True)
-    generated_text = text_autocompletion.run(recognized_text)
+    generated_text = text_autocompletion.run(recognized_text, num_words_to_generate=4)
     handwriting_generation.run(input_image_path, detected_objects, generated_text)
